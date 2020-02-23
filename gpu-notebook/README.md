@@ -122,5 +122,5 @@ Then re-generate and re-run the image, as closer described above:
 
 ```bash
 ./generate_Dockerfile.sh
-./run_Dockerfile.sh -p [port]:8888  
+./start-local.sh -p [port]:8888  
 ```
