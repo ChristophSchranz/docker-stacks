@@ -1,3 +1,8 @@
+**Note that this fork is not maintained any more. 
+The development and maintenance is done within the
+ [GPU-Jupyter](https://github.com/iot-salzburg/gpu-jupyter) repo that has the same functionality than this fork, 
+ but uses the [docker-stacks](https://github.com/jupyter/docker-stacks) as a submodule.**
+
 [![Discourse badge](https://img.shields.io/discourse/https/discourse.jupyter.org/users.svg?color=%23f37626)](https://discourse.jupyter.org/c/questions "Jupyter Discourse Q&A")
 [![Read the Docs badge](https://img.shields.io/readthedocs/jupyter-docker-stacks.svg)](https://jupyter-docker-stacks.readthedocs.io/en/latest/ "Documentation build status")
 [![DockerHub badge](https://images.microbadger.com/badges/version/jupyter/base-notebook.svg)](https://microbadger.com/images/jupyter/base-notebook "Recent tag/version of jupyter/base-notebook")
