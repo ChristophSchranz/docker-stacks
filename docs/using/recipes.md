@@ -17,12 +17,12 @@ orchestrator config.
 
 For example:
 
-```
+```bash
 docker run -it -e GRANT_SUDO=yes --user root jupyter/minimal-notebook
 ```
 
 **You should only enable `sudo` if you trust the user and/or if the container is running on an
-isolated host.**
+isolated host.** See [Docker security documentation](https://docs.docker.com/engine/security/userns-remap/) for more information about running containers as `root`.
 
 ## Using `pip install` or `conda install` in a Child Docker image
 
@@ -48,7 +48,7 @@ packages desired. Next, create a new Dockerfile like the one shown below.
 # Start from a core stack version
 FROM jupyter/datascience-notebook:9f9e5ca8fe5a
 # Install from requirements.txt file
-COPY requirements.txt /tmp/
+COPY --chown=${NB_UID}:${NB_GID} requirements.txt /tmp/
 RUN pip install --requirement /tmp/requirements.txt && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -60,7 +60,7 @@ For conda, the Dockerfile is similar:
 # Start from a core stack version
 FROM jupyter/datascience-notebook:9f9e5ca8fe5a
 # Install from requirements.txt file
-COPY requirements.txt /tmp/
+COPY --chown=${NB_UID}:${NB_GID} requirements.txt /tmp/
 RUN conda install --yes --file /tmp/requirements.txt && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -75,7 +75,7 @@ Python 2.x was removed from all images on August 10th, 2017, starting in tag `cc
 add a Python 2.x environment by defining your own Dockerfile inheriting from one of the images like
 so:
 
-```
+```dockerfile
 # Choose your desired base image
 FROM jupyter/scipy-notebook:latest
 
@@ -103,7 +103,7 @@ Ref:
 The default version of Python that ships with conda/ubuntu may not be the version you want.
 To add a conda environment with a different version and make it accessible to Jupyter, the instructions are very similar to Python 2.x but are slightly simpler (no need to switch to `root`):
 
-```
+```dockerfile
 # Choose your desired base image
 FROM jupyter/minimal-notebook:latest
 
@@ -112,13 +112,13 @@ ARG conda_env=python36
 ARG py_ver=3.6
 
 # you can add additional libraries you want conda to install by listing them below the first line and ending with "&& \"
-RUN conda env create --quiet --yes -p $CONDA_DIR/envs/$conda_env python=$py_ver ipython ipykernel && \
+RUN conda create --quiet --yes -p $CONDA_DIR/envs/$conda_env python=$py_ver ipython ipykernel && \
     conda clean --all -f -y
 
 # alternatively, you can comment out the lines above and uncomment those below
 # if you'd prefer to use a YAML file present in the docker build context
 
-# COPY environment.yml /home/$NB_USER/tmp/
+# COPY --chown=${NB_UID}:${NB_GID} environment.yml /home/$NB_USER/tmp/
 # RUN cd /home/$NB_USER/tmp/ && \
 #     conda env create -p $CONDA_DIR/envs/$conda_env -f environment.yml && \
 #     conda clean --all -f -y
@@ -147,6 +147,37 @@ JupyterLab is preinstalled as a notebook extension starting in tag
 Run jupyterlab using a command such as
 `docker run -it --rm -p 8888:8888 jupyter/datascience-notebook start.sh jupyter lab`
 
+## Dask JupyterLab Extension
+
+[Dask JupyterLab Extension](https://github.com/dask/dask-labextension) provides a JupyterLab extension to manage Dask clusters, as well as embed Dask's dashboard plots directly into JupyterLab panes. Create the Dockerfile as:
+
+```dockerfile
+# Start from a core stack version
+FROM jupyter/scipy-notebook:latest
+
+# Install the Dask dashboard
+RUN pip install dask-labextension
+
+# Dask Scheduler & Bokeh ports
+EXPOSE 8787
+EXPOSE 8786
+
+ENTRYPOINT ["jupyter", "lab", "--ip=0.0.0.0", "--allow-root"]
+```
+
+And build the image as:
+```bash
+docker build -t jupyter/scipy-dasklabextension:latest .
+```
+
+Once built, run using the command:
+```bash
+docker run -it --rm -p 8888:8888 -p 8787:8787 jupyter/scipy-dasklabextension:latest
+```
+
+Ref:
+[https://github.com/jupyter/docker-stacks/issues/999](https://github.com/jupyter/docker-stacks/issues/999)
+
 ## Let's Encrypt a Notebook server
 
 See the README for the simple automation here
@@ -161,7 +192,7 @@ Ref:
 [RISE](https://github.com/damianavila/RISE) allows via extension to create live slideshows of your
 notebooks, with no conversion, adding javascript Reveal.js:
 
-```
+```bash
 # Add Live slideshows with RISE
 RUN conda install -c damianavila82 rise
 ```
@@ -174,7 +205,7 @@ Credit: [Paolo D.](https://github.com/pdonorio) based on
 You need to install conda's gcc for Python xgboost to work properly. Otherwise, you'll get an
 exception about libgomp.so.1 missing GOMP_4.0.
 
-```
+```bash
 %%bash
 conda install -y gcc
 pip install xgboost
@@ -226,38 +257,30 @@ RUN rm /etc/dpkg/dpkg.cfg.d/excludes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Workaround for a mandb bug, should be fixed in mandb > 2.8.5
-# https://git.savannah.gnu.org/cgit/man-db.git/commit/?id=8197d7824f814c5d4b992b4c8730b5b0f7ec589a
-RUN echo "MANPATH_MAP ${CONDA_DIR}/bin ${CONDA_DIR}/man" >> /etc/manpath.config \
-    && echo "MANPATH_MAP ${CONDA_DIR}/bin ${CONDA_DIR}/share/man" >> /etc/manpath.config \
-    && mandb
-
 USER $NB_UID
 ```
 
 Adding the documentation on top of an existing singleuser image wastes a lot of space and requires
 reinstalling every system package, which can take additional time and bandwidth; the
 `datascience-notebook` image has been shown to grow by almost 3GB when adding manapages in this way.
-Enabling manpages in the base Ubuntu layer prevents this container bloat:
+Enabling manpages in the base Ubuntu layer prevents this container bloat.
+Just use previous `Dockerfile` with original ubuntu image as your base container:
 
-```Dockerfile
-# Ubuntu 18.04 (bionic) from 2018-05-26
-# https://github.com/docker-library/official-images/commit/aac6a45b9eb2bffb8102353c350d341a410fb169
-ARG BASE_CONTAINER=ubuntu:bionic-20180526@sha256:c8c275751219dadad8fa56b3ac41ca6cb22219ff117ca98fe82b42f24e1ba64e
-FROM $BASE_CONTAINER
+```dockerfile
+# Ubuntu 20.04 (focal) from 2020-04-23
+# https://github.com/docker-library/official-images/commit/4475094895093bcc29055409494cce1e11b52f94
+ARG BASE_CONTAINER=ubuntu:focal-20200423@sha256:238e696992ba9913d24cfc3727034985abd136e08ee3067982401acdc30cbf3f
+```
 
-ENV DEBIAN_FRONTEND noninteractive
-# Remove the manpage blacklist, install man, install docs
-RUN rm /etc/dpkg/dpkg.cfg.d/excludes \
-    && apt-get update \
-    && dpkg -l | grep ^ii | cut -d' ' -f3 | xargs apt-get install -yq --no-install-recommends --reinstall man \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Workaround for a mandb bug, should be fixed in mandb > 2.8.5
+For Ubuntu 18.04 (bionic) and earlier, you may also require to workaround for a mandb bug, which was fixed in mandb >= 2.8.6.1:
+```dockerfile
 # https://git.savannah.gnu.org/cgit/man-db.git/commit/?id=8197d7824f814c5d4b992b4c8730b5b0f7ec589a
-RUN echo "MANPATH_MAP /opt/conda/bin /opt/conda/man" >> /etc/manpath.config \
-    && echo "MANPATH_MAP /opt/conda/bin /opt/conda/share/man" >> /etc/manpath.config
+# http://launchpadlibrarian.net/435841763/man-db_2.8.5-2_2.8.6-1.diff.gz
+
+RUN echo "MANPATH_MAP ${CONDA_DIR}/bin ${CONDA_DIR}/man" >> /etc/manpath.config \
+    && echo "MANPATH_MAP ${CONDA_DIR}/bin ${CONDA_DIR}/share/man" >> /etc/manpath.config \
+    && mandb
+
 ```
 
 Be sure to check the current base image in `base-notebook` before building.
@@ -287,8 +310,8 @@ Credit: [Justin Tyberg](https://github.com/jtyberg), [quanghoc](https://github.c
 To use a specific version of JupyterHub, the version of `jupyterhub` in your image should match the
 version in the Hub itself.
 
-```
-FROM  jupyter/base-notebook:5ded1de07260
+```dockerfile
+FROM jupyter/base-notebook:5ded1de07260
 RUN pip install jupyterhub==0.8.0b1
 ```
 
@@ -350,7 +373,7 @@ Ref:
 
 ### Using Local Spark JARs
 
-```
+```python
 import os
 os.environ['PYSPARK_SUBMIT_ARGS'] = '--jars /home/jovyan/spark-streaming-kafka-assembly_2.10-1.6.1.jar pyspark-shell'
 import pyspark
@@ -379,7 +402,7 @@ Ref:
 
 ### Use jupyter/all-spark-notebooks with an existing Spark/YARN cluster
 
-```
+```dockerfile
 FROM jupyter/all-spark-notebook
 
 # Set env vars for pydoop
@@ -455,13 +478,13 @@ convenient to launch the server without a password or token. In this case, you s
 
 For jupyterlab:
 
-```
+```bash
 docker run jupyter/base-notebook:6d2a05346196 start.sh jupyter lab --LabApp.token=''
 ```
 
 For jupyter classic:
 
-```
+```bash
 docker run jupyter/base-notebook:6d2a05346196 start.sh jupyter notebook --NotebookApp.token=''
 ```
 
@@ -469,7 +492,7 @@ docker run jupyter/base-notebook:6d2a05346196 start.sh jupyter notebook --Notebo
 
 NB: this works for classic notebooks only
 
-```
+```dockerfile
 # Update with your base image of choice
 FROM jupyter/minimal-notebook:latest
 
@@ -483,3 +506,25 @@ RUN pip install jupyter_contrib_nbextensions && \
 
 Ref:
 [https://github.com/jupyter/docker-stacks/issues/675](https://github.com/jupyter/docker-stacks/issues/675)
+
+## Enable auto-sklearn notebooks
+
+Using `auto-sklearn` requires `swig`, which the other notebook images lack, so it cant be experimented with. Also, there is no Conda package for `auto-sklearn`.
+
+```dockerfile
+ARG BASE_CONTAINER=jupyter/scipy-notebook
+FROM jupyter/scipy-notebook:latest
+
+USER root
+
+# autosklearn requires swig, which no other image has
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends swig && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+
+USER $NB_UID
+
+RUN pip install --quiet --no-cache-dir auto-sklearn
+```
